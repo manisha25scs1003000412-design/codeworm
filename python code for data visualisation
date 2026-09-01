@@ -1,0 +1,135 @@
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+# Page Configuration
+st.set_page_config(
+    page_title="Sales & Revenue Dashboard | Task 1", layout="wide"
+)
+
+st.title("📊 Sales & Revenue Analysis Dashboard")
+st.caption("Submitted for Thiranex Internship - Task 1")
+
+# 1. File Upload or Default Data Generation
+st.sidebar.header("📁 Data Source")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload Excel or CSV File", type=["csv", "xlsx"]
+)
+
+
+@st.cache_data
+def load_default_data():
+    # Generates sample data automatically if no file is uploaded
+    data = {
+        "Order Date": pd.date_range(start="2026-01-01", periods=100, freq="D"),
+        "Region": ["North", "South", "East", "West"] * 25,
+        "Product": [
+            "Laptop",
+            "Smartphone",
+            "Tablet",
+            "Monitor",
+            "Headphones",
+        ]
+        * 20,
+        "Sales": [1200, 800, 400, 300, 150] * 20,
+        "Profit": [300, 200, 100, 50, 30] * 20,
+        "Quantity": [1, 2, 3, 1, 4] * 20,
+    }
+    return pd.DataFrame(data)
+
+
+if uploaded_file is not None:
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
+    st.sidebar.success("File Uploaded Successfully!")
+else:
+    df = load_default_data()
+    st.sidebar.info("Using Sample Dataset (Upload a CSV/Excel to customize)")
+
+# Ensure Date Column is Datetime
+date_col = next((col for col in df.columns if "date" in col.lower()), None)
+if date_col:
+    df[date_col] = pd.to_datetime(df[date_col])
+
+# 2. Interactive Slicers / Filters
+st.sidebar.header("🔍 Filters & Slicers")
+
+region_col = next(
+    (col for col in df.columns if "region" in col.lower()), df.columns[1]
+)
+selected_regions = st.sidebar.multiselect(
+    "Select Region:",
+    options=df[region_col].unique(),
+    default=df[region_col].unique(),
+)
+
+filtered_df = df[df[region_col].isin(selected_regions)]
+
+# 3. KPI Cards
+sales_col = next(
+    (col for col in df.columns if "sale" in col.lower() or "revenue" in col.lower()),
+    df.columns[-1],
+)
+profit_col = next(
+    (col for col in df.columns if "profit" in col.lower()), None
+)
+
+total_revenue = filtered_df[sales_col].sum()
+total_orders = len(filtered_df)
+avg_order_value = total_revenue / total_orders if total_orders > 0 else 0
+
+kpi1, kpi2, kpi3 = st.columns(3)
+kpi1.metric("Total Revenue", f"${total_revenue:,.2f}")
+kpi2.metric("Total Orders", f"{total_orders:,}")
+kpi3.metric("Avg Order Value", f"${avg_order_value:,.2f}")
+
+st.markdown("---")
+
+# 4. Interactive Visualizations
+chart1, chart2 = st.columns(2)
+
+with chart1:
+    st.subheader("📈 Revenue Trend Over Time")
+    if date_col:
+        trend_df = (
+            filtered_df.groupby(date_col)[sales_col].sum().reset_index()
+        )
+        fig_line = px.line(
+            trend_df,
+            x=date_col,
+            y=sales_col,
+            title="Revenue Trend",
+            labels={sales_col: "Revenue", date_col: "Date"},
+        )
+        st.plotly_chart(fig_line, use_container_width=True)
+    else:
+        st.info("No date column detected for line chart.")
+
+with chart2:
+    st.subheader("🏆 Top-Performing Products")
+    prod_col = next(
+        (
+            col
+            for col in df.columns
+            if "product" in col.lower() or "item" in col.lower()
+        ),
+        df.columns[2],
+    )
+    top_prod = (
+        filtered_df.groupby(prod_col)[sales_col].sum().nlargest(10).reset_index()
+    )
+    fig_bar = px.bar(
+        top_prod,
+        x=sales_col,
+        y=prod_col,
+        orientation="h",
+        title="Top Products by Sales",
+        color=sales_col,
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+# 5. Data Table View
+with st.expander("📄 View Processed Data"):
+    st.dataframe(filtered_df)
