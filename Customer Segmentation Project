@@ -1,0 +1,118 @@
+import pandas as pd
+import plotly.express as px
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+import streamlit as st
+
+# Page Layout Setup
+st.set_page_config(
+    page_title="Customer Segmentation | Task 2", layout="wide"
+)
+
+st.title("🎯 Customer Segmentation & Analytics Dashboard")
+st.caption("Submitted for Thiranex Data Analytics Internship - Task 2")
+
+# 1. Data Source (Upload or Auto-Generate)
+st.sidebar.header("📁 Data Input")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload Customer CSV Data", type=["csv", "xlsx"]
+)
+
+
+@st.cache_data
+def generate_sample_data():
+    # Generates sample customer purchase patterns automatically
+    import numpy as np
+
+    np.random.seed(42)
+    n_customers = 200
+    data = {
+        "CustomerID": [f"CUST-{1000+i}" for i in range(n_customers)],
+        "Age": np.random.randint(18, 70, size=n_customers),
+        "Annual Income ($k)": np.random.randint(15, 130, size=n_customers),
+        "Spending Score (1-100)": np.random.randint(1, 100, size=n_customers),
+        "Purchase Frequency": np.random.randint(1, 50, size=n_customers),
+    }
+    return pd.DataFrame(data)
+
+
+if uploaded_file is not None:
+    df = (
+        pd.read_csv(uploaded_file)
+        if uploaded_file.name.endswith(".csv")
+        else pd.read_excel(uploaded_file)
+    )
+    st.sidebar.success("Custom Dataset Loaded!")
+else:
+    df = generate_sample_data()
+    st.sidebar.info("Using Sample Customer Dataset")
+
+# 2. Sidebar Clustering Controls
+st.sidebar.header("⚙️ Model Settings")
+num_clusters = st.sidebar.slider(
+    "Select Number of Clusters (K):", min_value=2, max_value=6, value=4
+)
+
+# Select features for K-Means Clustering
+features = ["Annual Income ($k)", "Spending Score (1-100)"]
+X = df[features]
+
+# Preprocessing: Scale features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# 3. K-Means Machine Learning Model
+kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init=10)
+df["Cluster"] = kmeans.fit_predict(X_scaled)
+df["Cluster"] = "Cluster " + df["Cluster"].astype(str)
+
+# 4. KPI Cards
+total_customers = len(df)
+avg_income = df["Annual Income ($k)"].mean()
+avg_spending = df["Spending Score (1-100)"].mean()
+
+kpi1, kpi2, kpi3 = st.columns(3)
+kpi1.metric("Total Customers Analyzed", f"{total_customers}")
+kpi2.metric("Average Annual Income", f"${avg_income:.1f}k")
+kpi3.metric("Average Spending Score", f"{avg_spending:.1f}/100")
+
+st.markdown("---")
+
+# 5. Visualizations & Customer Segments
+chart_col1, chart_col2 = st.columns(2)
+
+with chart_col1:
+    st.subheader("📌 Customer Segments (Scatter Plot)")
+    fig_scatter = px.scatter(
+        df,
+        x="Annual Income ($k)",
+        y="Spending Score (1-100)",
+        color="Cluster",
+        hover_data=["CustomerID", "Age"],
+        title="Income vs Spending Score Clusters",
+        color_discrete_sequence=px.colors.qualitative.Set1,
+    )
+    st.plotly_chart(fig_scatter, use_container_width=True)
+
+with chart_col2:
+    st.subheader("📊 Average Metrics by Segment")
+    cluster_summary = (
+        df.groupby("Cluster")[
+            ["Annual Income ($k)", "Spending Score (1-100)", "Age"]
+        ]
+        .mean()
+        .reset_index()
+    )
+    fig_bar = px.bar(
+        cluster_summary,
+        x="Cluster",
+        y="Spending Score (1-100)",
+        color="Cluster",
+        title="Average Spending Score Per Cluster",
+        color_discrete_sequence=px.colors.qualitative.Set1,
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+# 6. Detailed Cluster Characteristics Table
+st.subheader("💡 Segment Insights & Summary")
+st.dataframe(cluster_summary.style.highlight_max(axis=0))
