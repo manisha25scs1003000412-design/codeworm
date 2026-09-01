@@ -1,0 +1,137 @@
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+# Page Configuration
+st.set_page_config(
+    page_title="Data Cleaning Automation | Task 4", layout="wide"
+)
+
+st.title("🧹 Automated Data Cleaning & Reporting Tool")
+st.caption("Submitted for Thiranex Data Analytics Internship - Task 4")
+
+# 1. Sidebar & File Upload
+st.sidebar.header("📁 Data Source")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload Messy CSV or Excel", type=["csv", "xlsx"]
+)
+
+
+@st.cache_data
+def generate_messy_data():
+    # Generate sample messy data with missing values & duplicates
+    data = {
+        "Customer_Name": [
+            "  Alice ",
+            "Bob",
+            "Charlie",
+            "Alice ",
+            " David ",
+            "Eva",
+            "Eva",
+        ],
+        "Age": [25, None, 30, 25, 45, 22, 22],
+        "Category": [
+            "Electronics",
+            "electronics",
+            "Clothing",
+            "Electronics",
+            "Home",
+            "Clothing",
+            "Clothing",
+        ],
+        "Sales": ["$1200", "$800", "$450", "$1200", None, "$300", "$300"],
+    }
+    return pd.DataFrame(data)
+
+
+if uploaded_file is not None:
+    df_raw = (
+        pd.read_csv(uploaded_file)
+        if uploaded_file.name.endswith(".csv")
+        else pd.read_excel(uploaded_file)
+    )
+    st.sidebar.success("Custom Dataset Loaded!")
+else:
+    df_raw = generate_messy_data()
+    st.sidebar.info("Using Sample Messy Dataset")
+
+# 2. Raw Data Metrics & Summary
+st.subheader("1️⃣ Raw Data Inspection")
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Rows (Raw)", f"{len(df_raw)}")
+col2.metric("Missing Values", f"{df_raw.isna().sum().sum()}")
+col3.metric("Duplicate Rows", f"{df_raw.duplicated().sum()}")
+
+with st.expander("📄 View Uncleaned Raw Data"):
+    st.dataframe(df_raw)
+
+# 3. Automated Cleaning Pipeline
+st.markdown("---")
+st.subheader("2️⃣ Automated Cleaning Pipeline")
+
+df_clean = df_raw.copy()
+
+# Step A: Remove Duplicate Rows
+initial_count = len(df_clean)
+df_clean = df_clean.drop_duplicates()
+removed_duplicates = initial_count - len(df_clean)
+
+# Step B: Clean Text Columns (Strip whitespace & capitalize)
+string_cols = df_clean.select_dtypes(include=["object"]).columns
+for col in string_cols:
+    df_clean[col] = df_clean[col].astype(str).str.strip().str.title()
+    # Remove currency symbols if present
+    df_clean[col] = df_clean[col].str.replace("$", "", regex=False)
+
+# Step C: Fill Missing Values
+numeric_cols = df_clean.select_dtypes(include=["number"]).columns
+for col in numeric_cols:
+    df_clean[col] = df_clean[col].fillna(df_clean[col].median())
+
+# Fill string missing values
+for col in string_cols:
+    df_clean[col] = df_clean[col].replace("None", "Unknown").fillna("Unknown")
+
+st.success(
+    f"✅ Cleaning Complete! Removed {removed_duplicates} duplicates and imputed missing values."
+)
+
+# 4. Automated Summary Report & Visualizations
+st.markdown("---")
+st.subheader("3️⃣ Automated Reporting & Visual Summaries")
+
+col_a, col_b = st.columns(2)
+
+with col_a:
+    st.write("**Cleaned Dataset Overview**")
+    st.dataframe(df_clean)
+
+with col_b:
+    cat_col = next(
+        (
+            col
+            for col in df_clean.columns
+            if "cat" in col.lower() or "type" in col.lower()
+        ),
+        df_clean.columns[0],
+    )
+    st.write(f"**Distribution by {cat_col}**")
+    counts = df_clean[cat_col].value_counts().reset_index()
+    fig = px.pie(
+        counts,
+        names=cat_col,
+        values="count",
+        title=f"Category Breakdown ({cat_col})",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# 5. Export Clean Data Option
+st.markdown("---")
+csv_data = df_clean.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="📥 Download Cleaned Dataset (CSV)",
+    data=csv_data,
+    file_name="cleaned_report.csv",
+    mime="text/csv",
+)
